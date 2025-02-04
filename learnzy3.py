@@ -45,7 +45,7 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Firebase Auth Component
+# Firebase Auth Component (Updated)
 def firebase_login():
     firebase_config_json = json.dumps(firebase_config)
     
@@ -302,15 +302,16 @@ def show_comparative_analysis():
 def main():
     st.set_page_config(page_title="Learnzy", layout="wide")
     
-    # Authentication Flow
+    # Authentication Flow (Fixed query params handling)
     if not st.session_state.user:
         st.title("Welcome to Learnzy! 📚")
         firebase_login()
         
-        query_params = st.experimental_get_query_params()  # Corrected line
-        if 'token' in query_params:
+        # Updated query params handling
+        token_list = st.query_params.get_all("token")
+        if token_list:
             try:
-                decoded_token = auth.verify_id_token(query_params['token'][0])
+                decoded_token = auth.verify_id_token(token_list[0])
                 st.session_state.user = {
                     'uid': decoded_token['uid'],
                     'name': decoded_token.get('name', 'User'),
