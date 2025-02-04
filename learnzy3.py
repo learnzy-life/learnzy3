@@ -19,12 +19,13 @@ db = firestore.client()
 
 # Firebase Web Config (Replace with your config)
 firebase_config = {
-    "apiKey": "AIzaSyABCDEfghIJKLmnopQRSTUVwxyz1234567",
-    "authDomain": "learnzy3.firebaseapp.com",
-    "projectId": "learnzy3",
-    "storageBucket": "learnzy3.appspot.com",
-    "messagingSenderId": "123456789012",
-    "appId": "1:123456789012:web:abcd1234efgh5678ijkl90"
+  apiKey: "AIzaSyCLc4MGAeqehNLIGmLOtK3TA6fX1ftfkfA",
+  authDomain: "learnzy3.firebaseapp.com",
+  projectId: "learnzy3",
+  storageBucket: "learnzy3.firebasestorage.app",
+  messagingSenderId: "782772780808",
+  appId: "1:782772780808:web:d458e2fc0bb5468fc1b6bd",
+  measurementId: "G-Q5E06GFKNC"
 }
 
 firebase = pyrebase.initialize_app(firebase_config)
