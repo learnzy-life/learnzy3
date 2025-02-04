@@ -296,7 +296,7 @@ def main():
         st.title("Welcome to Learnzy! 📚")
         firebase_login()
         
-        query_params = st.experimental_get_query_params()
+        query_params = sst.query_params()
         if 'token' in query_params:
             try:
                 decoded_token = auth.verify_id_token(query_params['token'][0])
