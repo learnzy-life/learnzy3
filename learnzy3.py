@@ -148,10 +148,13 @@ def complete_test():
 # Analytics Functions
 def calculate_insights():
     responses = st.session_state.test_data['responses']
+    if not responses:
+        return {}
     
+    total_responses = len(responses)
     insights = {
-        'accuracy': (sum(1 for r in responses.values() if r['correct']) / len(responses)) * 100,
-        'time_per_question': sum(r['time_spent'] for r in responses.values()) / len(responses),
+        'accuracy': (sum(1 for r in responses.values() if r['correct']) / total_responses) * 100,
+        'time_per_question': sum(r['time_spent'] for r in responses.values()) / total_responses,
         'topic_breakdown': {},
         'score_progression': []
     }
@@ -222,7 +225,12 @@ def process_answer(question, options, selected):
     time_spent = time.time() - st.session_state.test_data['start_time']
     
     # Find selected key
-    selected_key = [k for k, v in options.items() if v == selected][0]
+    try:
+        selected_key = [k for k, v in options.items() if v == selected][0]
+    except IndexError:
+        st.error("Invalid selection detected!")
+        return
+    
     is_correct = selected_key == question['Correct Answer'].strip().upper()
     
     # Update score
@@ -251,10 +259,13 @@ def process_answer(question, options, selected):
 
 def show_results():
     insights = calculate_insights()
+    if not insights:
+        st.warning("No test results available!")
+        return
     
     st.header("Test Results Summary")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Final Score", insights['accuracy'])
+    col1.metric("Final Score", f"{insights['accuracy']:.1f}%")
     col2.metric("Average Time/Question", f"{insights['time_per_question']:.1f}s")
     col3.metric("Total Time Taken", 
                f"{(time.time() - st.session_state.test_data['start_time'])/60:.1f} mins")
@@ -275,8 +286,8 @@ def show_comparative_analysis():
     if len(previous_tests) > 1:
         df = pd.DataFrame({
             'Test': [f"Test {i+1}" for i in range(len(previous_tests))],
-            'Score': [t['final_score'] for t in previous_tests],
-            'Accuracy': [t['final_score']/(4*30)*100 for t in previous_tests]
+            'Score': [t.get('final_score', 0) for t in previous_tests],
+            'Accuracy': [t.get('final_score', 0)/(4*30)*100 for t in previous_tests]
         })
         
         st.subheader("Score Trend")
@@ -296,7 +307,7 @@ def main():
         st.title("Welcome to Learnzy! 📚")
         firebase_login()
         
-        query_params = sst.query_params()
+        query_params = st.experimental_get_query_params()  # Corrected line
         if 'token' in query_params:
             try:
                 decoded_token = auth.verify_id_token(query_params['token'][0])
