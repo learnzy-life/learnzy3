@@ -1,348 +1,244 @@
 import streamlit as st
 import pandas as pd
+import hashlib
 import time
-import json
-import firebase_admin
-from firebase_admin import credentials, auth, firestore
-from firebase_admin.exceptions import FirebaseError
-from streamlit.components.v1 import html
 from datetime import datetime
 
-# Firebase Configuration
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase-key.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+# Configure page
+st.set_page_config(
+    page_title="NEET Mock Tests",
+    page_icon="🧪",
+    layout="centered"
+)
 
-firebase_config = {
-    "apiKey": "AIzaSyCLc4MGAeqehNLIGmLOtK3TA6fX1ftfkfA",
-    "authDomain": "learnzy3.firebaseapp.com",
-    "projectId": "learnzy3",
-    "storageBucket": "learnzy3.firebasestorage.app",
-    "messagingSenderId": "782772780808",
-    "appId": "1:782772780808:web:d458e2fc0bb5468fc1b6bd",
-    "measurementId": "G-Q5E06GFKNC"
+# Google Sheet configuration
+SHEET_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQU0OgpQOjfuOoscCzEGqLWkAvsSFNXSNYCIwCSDWUYHUFmdWuvMUO1nj8HaF86J89SQ9-udMNkq2kI/pub?output=csv"
+MOCK_TESTS = {
+    "Mock Test 1": {"gid": "319338355", "syllabus": "Biology (15), Physics (7), Chemistry (8)"},
+    "Mock Test 2": {"gid": "0", "syllabus": "Biology (12), Physics (9), Chemistry (9)"},
+    # Add remaining tests with actual gids
 }
 
-# Google Sheets Configuration
-SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR4BK9IQmKNdiw3Gx_BLj_3O_uAKmt4SSEwmqzGldFu0DhMnKQ4QGOZZQ1AsY-6AbbHgAGjs5H_gIuV/pub?output=csv'
+# Column mapping
+COLUMN_MAP = {
+    "Question Number": "id",
+    "Question Text": "text",
+    "Option A": "A",
+    "Option B": "B",
+    "Option C": "C",
+    "Option D": "D",
+    "Correct Answer": "correct",
+    "Topic": "topic",
+    "Subtopic": "subtopic",
+    "Difficulty Level": "difficulty",
+    "Time to Solve": "ideal_time",
+    "Error Type": "error_type",
+    "Self Assessed Triggers": "triggers"
+}
 
-# Session State Initialization
-session_defaults = {
-    'user': None,
-    'current_test': None,
-    'test_started': False,
-    'questions': [],
-    'test_data': {
-        'score': 0,
-        'responses': {},
-        'start_time': None,
-        'current_question': 0
+# Session state management
+def init_session():
+    defaults = {
+        'authenticated': False,
+        'current_test': None,
+        'questions': [],
+        'user_answers': {},
+        'current_question': 0,
+        'show_report': False,
+        'users': {}
     }
-}
+    for key, val in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-for key, value in session_defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+init_session()
 
-# Firebase Auth Component (Updated)
-def firebase_login():
-    firebase_config_json = json.dumps(firebase_config)
-    
-    login_js = f"""
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-    <script>
-        const firebaseConfig = {firebase_config_json};
-        firebase.initializeApp(firebaseConfig);
-        
-        async function signInWithGoogle() {{
-            const provider = new firebase.auth.GoogleAuthProvider();
-            try {{
-                const result = await firebase.auth().signInWithPopup(provider);
-                const user = result.user;
-                const token = await user.getIdToken();
-                window.parent.postMessage({{"type": "user_token", "token": token}}, "*");
-            }} catch (error) {{
-                console.error(error);
-            }}
-        }}
-    </script>
-    <button onclick="signInWithGoogle()" style="padding: 10px 20px; background-color: #4285F4; color: white; border: none; border-radius: 5px; cursor: pointer;">
-        Sign in with Google
-    </button>
-    """
-    html(login_js, height=100)
-
-# Data Loading with Validation
+# Data loading
 @st.cache_data(ttl=3600)
-def load_questions():
+def load_questions(gid):
     try:
-        df = pd.read_csv(SHEET_URL)
-        df.columns = df.columns.str.strip()
+        url = f"{SHEET_BASE}&gid={gid}"
+        df = pd.read_csv(url).rename(columns=COLUMN_MAP)
         
-        required_columns = [
-            'Question ID', 'Question Text', 'Option A', 'Option B',
-            'Option C', 'Option D', 'Correct Answer', 'Subject', 'Topic',
-            'Sub- Topic', 'Difficulty Level', 'Question Type', 'Cognitive Level'
-        ]
-        
-        missing = [col for col in required_columns if col not in df.columns]
+        # Validate columns
+        required = list(COLUMN_MAP.values())[:10]  # First 10 are mandatory
+        missing = [col for col in required if col not in df.columns]
         if missing:
             st.error(f"Missing columns: {', '.join(missing)}")
             return []
-            
-        valid_questions = []
-        for _, row in df.iterrows():
-            if all(row[['Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer']].notna()):
-                valid_questions.append(row.to_dict())
         
-        return valid_questions[:30]  # First 30 questions for mock test
-        
+        # Convert time to seconds
+        df['ideal_time'] = df['ideal_time'] * 60  # Convert minutes to seconds
+        return df.to_dict('records')
+    
     except Exception as e:
-        st.error(f"Data loading failed: {str(e)}")
+        st.error(f"Failed to load data: {str(e)}")
         return []
 
-# Test Management Functions
-def initialize_test(test_number):
-    st.session_state.test_data = {
-        'score': 0,
-        'responses': {},
-        'start_time': time.time(),
-        'current_question': 0
-    }
-    st.session_state.questions = load_questions()
-    st.session_state.current_test = test_number
-    st.session_state.test_started = True
+# Authentication system
+def auth_system():
+    with st.container():
+        if not st.session_state.authenticated:
+            tab1, tab2 = st.tabs(["Login", "Sign Up"])
+            
+            with tab1:
+                with st.form("Login"):
+                    email = st.text_input("Email")
+                    password = st.text_input("Password", type="password")
+                    if st.form_submit_button("Login"):
+                        user = st.session_state.users.get(email)
+                        if user and user['password'] == hashlib.sha256(password.encode()).hexdigest():
+                            st.session_state.authenticated = True
+                            st.session_state.current_user = email
+                            st.rerun()
+                        else:
+                            st.error("Invalid credentials")
 
-def save_test_progress():
-    if st.session_state.user:
-        test_ref = db.collection('users').document(st.session_state.user['uid'])\
-                   .collection('tests').document(f"test_{st.session_state.current_test}")
-        
-        test_data = {
-            'score': st.session_state.test_data['score'],
-            'progress': len(st.session_state.test_data['responses']),
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            **st.session_state.test_data
-        }
-        test_ref.set(test_data, merge=True)
+            with tab2:
+                with st.form("Sign Up"):
+                    new_email = st.text_input("Email")
+                    new_pass = st.text_input("Password", type="password")
+                    confirm_pass = st.text_input("Confirm Password", type="password")
+                    if st.form_submit_button("Create Account"):
+                        if new_pass != confirm_pass:
+                            st.error("Passwords don't match")
+                        elif new_email in st.session_state.users:
+                            st.error("Email already exists")
+                        else:
+                            st.session_state.users[new_email] = {
+                                'password': hashlib.sha256(new_pass.encode()).hexdigest(),
+                                'progress': {},
+                                'responses': {}
+                            }
+                            st.success("Account created! Please login")
 
-def complete_test():
-    if st.session_state.user:
-        test_ref = db.collection('users').document(st.session_state.user['uid'])\
-                   .collection('tests').document(f"test_{st.session_state.current_test}")
-        
-        final_data = {
-            'completed': True,
-            'total_time': time.time() - st.session_state.test_data['start_time'],
-            'final_score': st.session_state.test_data['score'],
-            'responses': st.session_state.test_data['responses'],
-            'timestamp': firestore.SERVER_TIMESTAMP
-        }
-        test_ref.set(final_data, merge=True)
-        
-    st.session_state.test_started = False
-    st.session_state.current_test = None
-
-# Analytics Functions
-def calculate_insights():
-    responses = st.session_state.test_data['responses']
-    if not responses:
-        return {}
+# Test interface
+def show_question(q):
+    st.subheader(f"Question {st.session_state.current_question + 1}/{len(st.session_state.questions)}")
+    st.markdown(f"**{q['text']}**")
     
-    total_responses = len(responses)
-    insights = {
-        'accuracy': (sum(1 for r in responses.values() if r['correct']) / total_responses) * 100,
-        'time_per_question': sum(r['time_spent'] for r in responses.values()) / total_responses,
-        'topic_breakdown': {},
-        'score_progression': []
-    }
+    answer = st.radio("Options:", 
+                     [q['A'], q['B'], q['C'], q['D']],
+                     key=f"q_{q['id']}")
     
-    for response in responses.values():
-        topic = response['topic']
-        if topic not in insights['topic_breakdown']:
-            insights['topic_breakdown'][topic] = {'correct': 0, 'total': 0}
-        insights['topic_breakdown'][topic]['total'] += 1
-        insights['topic_breakdown'][topic]['correct'] += 1 if response['correct'] else 0
-    
-    return insights
-
-def get_comparative_data():
-    if st.session_state.user:
-        tests_ref = db.collection('users').document(st.session_state.user['uid']).collection('tests')
-        return [doc.to_dict() for doc in tests_ref.stream()]
-    return []
-
-# UI Components
-def show_dashboard():
-    st.header(f"Welcome, {st.session_state.user['name']}!")
-    st.subheader("Available Mock Tests")
-    
-    cols = st.columns(5)
-    for i in range(5):
-        with cols[i]:
-            st.image("https://via.placeholder.com/150", width=100)
-            if st.button(f"Test {i+1}", key=f"test_{i}"):
-                st.session_state.current_test = i+1
-
-def show_syllabus():
-    st.subheader(f"Test {st.session_state.current_test} Syllabus")
-    with st.expander("View Syllabus Details", expanded=True):
-        st.write("""
-        ### Mathematics (30 Questions)
-        - Algebra: 10 questions
-        - Geometry: 8 questions
-        - Calculus: 12 questions
-        """)
-        st.write("**Time Limit:** 30 minutes")
-        st.write("**Scoring:** +4 for correct, -1 for incorrect")
-    
-    if st.button("Start Test Now", type="primary"):
-        initialize_test(st.session_state.current_test)
-
-def show_question():
-    q_idx = st.session_state.test_data['current_question']
-    question = st.session_state.questions[q_idx]
-    
-    st.subheader(f"Question {q_idx+1}/30")
-    st.markdown(f"**{question['Question Text']}**")
-    
-    options = {
-        'A': question['Option A'],
-        'B': question['Option B'],
-        'C': question['Option C'],
-        'D': question['Option D']
-    }
-    
-    selected = st.radio("Options", list(options.values()), key=f"q_{q_idx}")
-    
-    if st.button("Next Question"):
-        process_answer(question, options, selected)
-
-def process_answer(question, options, selected):
-    # Calculate time spent
-    time_spent = time.time() - st.session_state.test_data['start_time']
-    
-    # Find selected key
-    try:
-        selected_key = [k for k, v in options.items() if v == selected][0]
-    except IndexError:
-        st.error("Invalid selection detected!")
-        return
-    
-    is_correct = selected_key == question['Correct Answer'].strip().upper()
-    
-    # Update score
-    score_delta = 4 if is_correct else -1
-    st.session_state.test_data['score'] += score_delta
-    
-    # Store response
-    st.session_state.test_data['responses'][question['Question ID']] = {
-        'question': question['Question Text'],
-        'topic': question['Topic'],
-        'subtopic': question['Sub- Topic'],
-        'selected': selected_key,
-        'correct': is_correct,
-        'time_spent': time_spent
-    }
-    
-    # Move to next question or complete
-    if st.session_state.test_data['current_question'] < 29:
-        st.session_state.test_data['current_question'] += 1
-        st.session_state.test_data['start_time'] = time.time()
-        save_test_progress()
-        st.rerun()
-    else:
-        complete_test()
-        st.rerun()
-
-def show_results():
-    insights = calculate_insights()
-    if not insights:
-        st.warning("No test results available!")
-        return
-    
-    st.header("Test Results Summary")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Final Score", f"{insights['accuracy']:.1f}%")
-    col2.metric("Average Time/Question", f"{insights['time_per_question']:.1f}s")
-    col3.metric("Total Time Taken", 
-               f"{(time.time() - st.session_state.test_data['start_time'])/60:.1f} mins")
-    
-    st.subheader("Topic-wise Performance")
-    for topic, data in insights['topic_breakdown'].items():
-        accuracy = (data['correct'] / data['total']) * 100
-        st.write(f"**{topic}**")
-        st.progress(accuracy/100)
-        st.caption(f"{data['correct']}/{data['total']} correct ({accuracy:.1f}%)")
-    
-    show_comparative_analysis()
-
-def show_comparative_analysis():
-    st.header("📈 Historical Performance")
-    previous_tests = get_comparative_data()
-    
-    if len(previous_tests) > 1:
-        df = pd.DataFrame({
-            'Test': [f"Test {i+1}" for i in range(len(previous_tests))],
-            'Score': [t.get('final_score', 0) for t in previous_tests],
-            'Accuracy': [t.get('final_score', 0)/(4*30)*100 for t in previous_tests]
-        })
-        
-        st.subheader("Score Trend")
-        st.line_chart(df.set_index('Test')['Accuracy'])
-        
-        st.subheader("Time Efficiency Improvement")
-        st.bar_chart(df.set_index('Test')['Score'])
-    else:
-        st.info("Complete more tests to unlock comparative analysis!")
-
-# Main App Flow
-def main():
-    st.set_page_config(page_title="Learnzy", layout="wide")
-    
-    # Authentication Flow (Fixed query params handling)
-    if not st.session_state.user:
-        st.title("Welcome to Learnzy! 📚")
-        firebase_login()
-        
-        # Updated query params handling
-        token_list = st.query_params.get_all("token")
-        if token_list:
-            try:
-                decoded_token = auth.verify_id_token(token_list[0])
-                st.session_state.user = {
-                    'uid': decoded_token['uid'],
-                    'name': decoded_token.get('name', 'User'),
-                    'email': decoded_token.get('email', '')
-                }
-                st.rerun()
-            except FirebaseError as e:
-                st.error(f"Authentication failed: {str(e)}")
-        return
-    
-    # Main Interface
-    if st.session_state.test_started:
-        # Timer Display
-        elapsed_time = time.time() - st.session_state.test_data['start_time']
-        time_left = max(1800 - elapsed_time, 0)
-        mins, secs = divmod(time_left, 60)
-        st.sidebar.progress(time_left/1800, text=f"Time Left: {int(mins):02d}:{int(secs):02d}")
-        
-        if time_left <= 0:
-            complete_test()
+    cols = st.columns([1, 3, 1])
+    with cols[0]:
+        if st.button("← Back", disabled=st.session_state.current_question == 0):
+            st.session_state.current_question -= 1
             st.rerun()
+    
+    with cols[2]:
+        btn_label = "Next →" if st.session_state.current_question < len(st.session_state.questions)-1 else "Submit"
+        if st.button(btn_label):
+            record_answer(q, answer)
+            if st.session_state.current_question < len(st.session_state.questions)-1:
+                st.session_state.current_question += 1
+            else:
+                handle_test_completion()
+            st.rerun()
+    
+    show_time_tracker(q['ideal_time'])
+
+def record_answer(q, answer):
+    selected = ['A', 'B', 'C', 'D'][[q['A'], q['B'], q['C'], q['D']].index(answer)]
+    st.session_state.user_answers[q['id']] = {
+        'selected': selected,
+        'correct': q['correct'],
+        'time_taken': time.time() - st.session_state.get('q_start_time', time.time()),
+        'question_text': q['text']
+    }
+    st.session_state.q_start_time = time.time()
+
+def show_time_tracker(ideal_time):
+    current_time = time.time() - st.session_state.get('q_start_time', time.time())
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Your Time", f"{int(current_time)}s")
+    with col2:
+        st.metric("Ideal Time", f"{int(ideal_time)}s")
+    st.progress(min(current_time/ideal_time, 1.0))
+
+# Error tagging
+def error_analysis():
+    st.header("Error Analysis")
+    wrong_answers = {k:v for k,v in st.session_state.user_answers.items() if v['selected'] != v['correct']}
+    
+    for qid, ans in wrong_answers.items():
+        with st.expander(f"Question {qid}", expanded=True):
+            st.write(ans['question_text'])
+            ans['error_type'] = st.selectbox(
+                "Error Type",
+                ["Conceptual", "Silly Mistake", "Unprepared"],
+                key=f"err_{qid}"
+            )
+            ans['triggers'] = st.multiselect(
+                "Self Assessed Triggers",
+                ["Time Pressure", "Topic Insecurity", "Ambiguity Fear", 
+                 "Numerical Phobia", "Memory Gaps", "Past Trauma"],
+                key=f"trig_{qid}"
+            )
+    
+    if st.button("Generate Final Report"):
+        st.session_state.show_report = True
+        st.rerun()
+
+# Reporting system
+def generate_report():
+    total_score = sum(4 if ans['selected'] == ans['correct'] else -1 
+                     for ans in st.session_state.user_answers.values())
+    
+    total_time = sum(ans['time_taken'] for ans in st.session_state.user_answers.values())
+    ideal_time = sum(q['ideal_time'] for q in st.session_state.questions)
+    
+    st.title("📊 Test Report")
+    st.header(f"Score: {total_score}/{4*len(st.session_state.questions)}")
+    
+    with st.expander("Time Analysis", expanded=True):
+        cols = st.columns(2)
+        cols[0].metric("Your Total Time", f"{int(total_time//60)}m {int(total_time%60)}s")
+        cols[1].metric("Recommended Time", f"{int(ideal_time//60)}m {int(ideal_time%60)}s")
+        st.write(f"**Time Difference:** {int((total_time-ideal_time)//60)}m {int((total_time-ideal_time)%60)}s")
+    
+    with st.expander("Error Analysis"):
+        error_counts = {}
+        for ans in st.session_state.user_answers.values():
+            if ans['selected'] != ans['correct']:
+                et = ans.get('error_type', 'Not specified')
+                error_counts[et] = error_counts.get(et, 0) + 1
+        st.bar_chart(error_counts)
+    
+    if st.button("Return to Dashboard"):
+        st.session_state.current_test = None
+        st.session_state.show_report = False
+        st.rerun()
+
+# Main app flow
+def main():
+    auth_system()
+    
+    if st.session_state.authenticated:
+        if not st.session_state.current_test:
+            st.title("Available Mock Tests")
+            for test_name, details in MOCK_TESTS.items():
+                with st.expander(test_name):
+                    st.write(f"**Syllabus:** {details['syllabus']}")
+                    st.write("Contains 30 carefully curated questions")
+                    if st.button(f"Start {test_name}"):
+                        st.session_state.current_test = test_name
+                        st.session_state.questions = load_questions(details['gid'])
+                        st.session_state.user_answers = {}
+                        st.session_state.current_question = 0
+                        st.session_state.q_start_time = time.time()
+                        st.rerun()
         
-        # Question Interface
-        show_question()
-    elif st.session_state.current_test:
-        show_syllabus()
-    else:
-        show_dashboard()
-        if st.session_state.current_test is None:
-            st.sidebar.header("Previous Performance")
-            show_comparative_analysis()
+        elif st.session_state.questions:
+            if not st.session_state.show_report:
+                if st.session_state.current_question < len(st.session_state.questions):
+                    show_question(st.session_state.questions[st.session_state.current_question])
+                else:
+                    error_analysis()
+            else:
+                generate_report()
 
 if __name__ == "__main__":
     main()
