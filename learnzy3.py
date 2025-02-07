@@ -5,29 +5,42 @@ import time
 # ------------------------------------------------------------------
 # 1. MOCK TESTS CONFIGURATION
 # ------------------------------------------------------------------
-# Define a dictionary for the five mock tests. Each item contains the
-# export-to-CSV URL (note the conversion from your provided editing URL)
-# and a placeholder syllabus description.
+# Each mock test (subsheet) has an export-to-CSV URL and its syllabus details.
 mock_tests = {
     "Mock Test 1": {
         "csv_url": "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid=848132391",
-        "syllabus": "Syllabus details for Mock Test 1:\n- Topic coverage: Algebra, Geometry\n- Key concepts: Linear Equations, Quadrilaterals\n- Practice Questions: 50"
+        "syllabus": """Syllabus details for Mock Test 1:
+- Topic Coverage: Algebra, Geometry
+- Key Concepts: Linear Equations, Quadrilaterals
+- Practice Questions: 50"""
     },
     "Mock Test 2": {
         "csv_url": "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid=610172732",
-        "syllabus": "Syllabus details for Mock Test 2:\n- Topic coverage: Calculus, Trigonometry\n- Key concepts: Derivatives, Sine & Cosine\n- Practice Questions: 45"
+        "syllabus": """Syllabus details for Mock Test 2:
+- Topic Coverage: Calculus, Trigonometry
+- Key Concepts: Derivatives, Sine & Cosine
+- Practice Questions: 45"""
     },
     "Mock Test 3": {
         "csv_url": "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid=1133755197",
-        "syllabus": "Syllabus details for Mock Test 3:\n- Topic coverage: Physics fundamentals\n- Key concepts: Mechanics, Thermodynamics\n- Practice Questions: 40"
+        "syllabus": """Syllabus details for Mock Test 3:
+- Topic Coverage: Physics Fundamentals
+- Key Concepts: Mechanics, Thermodynamics
+- Practice Questions: 40"""
     },
     "Mock Test 4": {
         "csv_url": "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid=690484996",
-        "syllabus": "Syllabus details for Mock Test 4:\n- Topic coverage: Chemistry basics\n- Key concepts: Organic Reactions, Periodic Table\n- Practice Questions: 35"
+        "syllabus": """Syllabus details for Mock Test 4:
+- Topic Coverage: Chemistry Basics
+- Key Concepts: Organic Reactions, Periodic Table
+- Practice Questions: 35"""
     },
     "Mock Test 5": {
         "csv_url": "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid=160639837",
-        "syllabus": "Syllabus details for Mock Test 5:\n- Topic coverage: Combined subjects\n- Key concepts: Mixed problems\n- Practice Questions: 55"
+        "syllabus": """Syllabus details for Mock Test 5:
+- Topic Coverage: Combined Subjects
+- Key Concepts: Mixed Problems
+- Practice Questions: 55"""
     }
 }
 
@@ -55,6 +68,7 @@ initialize_session_state()
 def load_data(csv_url):
     try:
         data = pd.read_csv(csv_url)
+        # Convert the DataFrame to a list of dictionaries.
         return data.to_dict(orient='records')
     except Exception as e:
         st.error(f"Failed to load data: {str(e)}")
@@ -72,12 +86,13 @@ def get_video_suggestions(topic):
     return video_suggestions.get(topic, "#")
 
 # ------------------------------------------------------------------
-# 5. TEST FLOW FUNCTIONS
+# 5. QUESTION DISPLAY & PROCESSING FUNCTIONS
 # ------------------------------------------------------------------
 def display_question(q, total_questions):
     st.subheader(f"Question {st.session_state.current_question + 1} of {total_questions}")
     st.markdown(f"**{q['Question Text']}**")
     
+    # Display the answer options.
     options = [q['Option A'], q['Option B'], q['Option C'], q['Option D']]
     answer = st.radio("Select your answer:", 
                       options=options,
@@ -90,7 +105,7 @@ def display_question(q, total_questions):
         st.experimental_rerun()
 
 def process_answer(q, answer):
-    # Using "Question Number" as the key identifier in the new format
+    # Use "Question Number" as the unique identifier.
     question_id = q["Question Number"]
     options = [q['Option A'], q['Option B'], q['Option C'], q['Option D']]
     selected_option = chr(65 + options.index(answer))
@@ -101,12 +116,15 @@ def process_answer(q, answer):
         'time_taken': time.time() - st.session_state.question_start_time
     }
 
+# ------------------------------------------------------------------
+# 6. RESULTS & ANALYSIS FUNCTIONS
+# ------------------------------------------------------------------
 def show_results(questions):
     st.balloons()
     st.title("📊 Detailed Performance Report")
     
     total_time = sum(ans['time_taken'] for ans in st.session_state.user_answers.values())
-    # Instead of calculating a “topper time,” we now sum the given benchmark times.
+    # The benchmark is now taken directly from the sheet for each question.
     benchmark_total_time = sum(float(q["Time to Solve (seconds)"]) for q in questions)
     correct = sum(1 for ans in st.session_state.user_answers.values() if ans['selected'] == ans['correct'])
     accuracy = (correct / len(questions)) * 100
@@ -153,16 +171,13 @@ def show_results(questions):
     for topic, data in analysis_df.iterrows():
         with st.expander(f"{topic} Analysis", expanded=True):
             col1, col2, col3 = st.columns(3)
-            
             with col1:
                 st.markdown("**Accuracy**")
                 st.progress(data['accuracy']/100)
                 st.caption(f"{data['correct']}/{data['total_questions']} Correct")
                 st.metric("Accuracy Score", f"{data['accuracy']:.1f}%")
-                
                 if data['accuracy'] < 70:
                     st.markdown(f"📚 [Improvement Video]({get_video_suggestions(topic)})")
-            
             with col2:
                 st.markdown("**Time Comparison**")
                 st.metric("Your Avg Time", f"{data['avg_user_time']:.1f}s")
@@ -170,7 +185,6 @@ def show_results(questions):
                 st.metric("Time Difference", 
                           f"{abs(data['time_difference']):.1f}s",
                           delta=f"{'Faster' if data['time_difference'] < 0 else 'Slower'}")
-            
             with col3:
                 st.markdown("**Recommendations**")
                 if data['accuracy'] < 70:
@@ -210,7 +224,7 @@ def show_results(questions):
     
     st.dataframe(subject_df[['accuracy', 'avg_user_time', 'avg_benchmark_time', 'time_difference']])
     
-    # --- Additional Insights using new tags ---
+    # --- Additional Insights using New Tags ---
     st.header("🎯 Additional Insights")
     # Difficulty Level Distribution
     difficulty_counts = {}
@@ -244,19 +258,19 @@ def show_results(questions):
     """)
     
     if st.button("🔄 Retake Test"):
-        # Clear all session state so the user can restart from the welcome page
+        # Clear all session state so the user can start afresh.
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.experimental_rerun()
 
 # ------------------------------------------------------------------
-# 6. MAIN APP FLOW
+# 7. MAIN APP FLOW
 # ------------------------------------------------------------------
 def main():
     st.title("📝 Smart Mock Test Platform")
     initialize_session_state()
     
-    # 6a. If no test has been selected, show the welcome & selection page.
+    # --- Welcome & Test Selection ---
     if st.session_state.selected_test is None:
         st.header("Welcome to the Smart Mock Test Platform")
         st.write("Please select a mock test to begin:")
@@ -264,26 +278,30 @@ def main():
             if st.button(test_name, key=test_name):
                 st.session_state.selected_test = test_name
                 st.experimental_rerun()
-        return  # Wait for the user to choose a test.
+        return  # Wait until the user selects a test.
     
-    # 6b. If a test has been selected but not started, show the syllabus modal.
+    # --- Syllabus Modal ---
     if not st.session_state.test_started:
         test_info = mock_tests[st.session_state.selected_test]
         with st.modal(f"{st.session_state.selected_test} - Syllabus"):
             st.write(test_info["syllabus"])
-            if st.button("Start Test"):
+            if st.button("Start Test", key="start_test_button"):
                 st.session_state.test_started = True
-                st.experimental_rerun()
+                # Set a flag to trigger rerun outside the modal context.
+                st.session_state.trigger_rerun = True
+        # Check the flag outside the modal block.
+        if st.session_state.get("trigger_rerun", False):
+            del st.session_state.trigger_rerun
+            st.experimental_rerun()
         return
-    
-    # 6c. Once the test has started, load the selected test’s questions.
+
+    # --- Load Questions & Run the Test ---
     test_info = mock_tests[st.session_state.selected_test]
     questions = load_data(test_info["csv_url"])
     if not questions:
         st.error("Failed to load questions. Please check the data source.")
         return
     
-    # 6d. Test Flow: Display each question one by one and, once done, show results.
     if st.session_state.current_question < len(questions):
         q = questions[st.session_state.current_question]
         display_question(q, len(questions))
