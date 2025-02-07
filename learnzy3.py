@@ -1,128 +1,244 @@
 import streamlit as st
 import pandas as pd
+import time
+from datetime import datetime
 
-# Mapping of mock tests with GID values
-mock_tests = {
-    "Mock Test 1": "848132391",
-    "Mock Test 2": "610172732",
-    "Mock Test 3": "1133755197",
-    "Mock Test 4": "690484996",
-    "Mock Test 5": "160639837"
+# ================== Configuration ==================
+MOCKS = {
+    'Mock Test 1': {'gid': '848132391'},
+    'Mock Test 2': {'gid': '610172732'},
+    'Mock Test 3': {'gid': '1133755197'},
+    'Mock Test 4': {'gid': '690484996'},
+    'Mock Test 5': {'gid': '160639837'}
 }
 
-# Base Google Sheet URL
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1qrdURj3XHZHStT2BG1ndmq0LyFHGbvVVQSruBlkH9mk/export?format=csv&gid="
+REQUIRED_COLUMNS = [
+    'Question Number', 'Question Text', 'Option A', 'Option B', 'Option C', 'Option D',
+    'Correct Answer', 'Subject', 'Topic', 'Subtopic', 'Difficulty Level',
+    'Question Structure', 'Bloom’s Taxonomy', 'Priority Level',
+    'Time to Solve (seconds)', 'Key Concept Tested', 'Common Pitfalls'
+]
 
-# Function to fetch mock test data
-def load_mock_test(gid):
-    url = SHEET_URL + gid
+BASE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQvDpDbBzkcr1-yuTXAfYHvV6I0IzWHnU7SFF1ogGBK-PBIru25TthrwVJe3WiqTYchBoCiSyT0V1PJ/pub?output=csv&gid="
+
+# ================== Session State ==================
+def initialize_session_state():
+    required_states = {
+        'test_selected': None,
+        'test_started': False,
+        'current_question': 0,
+        'user_answers': {},
+        'question_start_time': time.time(),
+        'show_syllabus': False,
+        'data_loaded': False
+    }
+    for key, value in required_states.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+initialize_session_state()
+
+# ================== Data Loading ==================
+@st.cache_data(show_spinner="📖 Loading questions...")
+def load_mock_data(gid):
     try:
-        return pd.read_csv(url)
+        url = f"{BASE_SHEET_URL}{gid}"
+        df = pd.read_csv(url)
+        
+        # Clean column names
+        df.columns = df.columns.str.strip().str.title()
+        
+        # Validate columns
+        missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+        if missing_cols:
+            st.error(f"Missing columns in sheet: {', '.join(missing_cols)}")
+            return None
+            
+        return df.to_dict(orient='records')
     except Exception as e:
-        st.error("Error loading the mock test data. Please try again.")
+        st.error(f"Failed to load data: {str(e)}")
         return None
 
-# Function to display mock test selection
-def mock_test_selection():
-    st.title("Welcome to Learnzy Mock Tests 🎯")
-    st.subheader("Select a Mock Test to Begin")
+# ================== Welcome Page ==================
+def show_welcome():
+    st.title("🚀 ExamPrep Pro")
+    st.markdown("""
+    <style>
+    .welcome-header {
+        color: #2E86C1;
+        text-align: center;
+        font-size: 2.5em;
+    }
+    .mock-card {
+        padding: 20px;
+        border-radius: 10px;
+        margin: 10px 0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    .mock-card:hover {
+        transform: scale(1.02);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    selected_test = st.selectbox("Choose a Mock Test:", list(mock_tests.keys()))
+    st.markdown('<div class="welcome-header">Welcome to Smart Mock Test Platform!</div>', unsafe_allow_html=True)
+    
+    cols = st.columns(3)
+    with cols[1]:
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135810.png", width=150)
 
-    if st.button("View Details"):
-        st.session_state["selected_test"] = selected_test
-        st.session_state["mock_data"] = load_mock_test(mock_tests[selected_test])
+    st.subheader("📋 Available Mock Tests")
+    for mock_name, mock_data in MOCKS.items():
+        with st.container():
+            st.markdown(f"""
+            <div class="mock-card">
+                <h3>{mock_name}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button(f"Select {mock_name}", key=f"btn_{mock_name}"):
+                st.session_state.test_selected = mock_data['gid']
+                st.session_state.show_syllabus = True
+                st.session_state.data_loaded = False
+                st.rerun()
+
+# ================== Syllabus Popup ==================
+def show_syllabus():
+    if st.session_state.show_syllabus and st.session_state.test_selected:
+        with st.expander("📚 Mock Test Syllabus", expanded=True):
+            if not st.session_state.data_loaded:
+                data = load_mock_data(st.session_state.test_selected)
+                if data is None:
+                    st.error("Failed to load test data")
+                    return
+                st.session_state.data_loaded = data
+                
+            data = st.session_state.data_loaded
+            
+            try:
+                subjects = list(set(str(q.get('Subject', 'General')) for q in data))
+                topics = list(set(str(q.get('Topic', 'General')) for q in data))
+                
+                st.markdown(f"""
+                - **Subjects Covered:** {', '.join(subjects)}
+                - **Main Topics:** {', '.join(topics[:5])}
+                - **Total Questions:** {len(data)}
+                - **Suggested Time:** {sum(int(q.get('Time to Solve (seconds)', 0)) for q in data)//60} minutes
+                """)
+                
+                if st.button("🚀 Start Test Now", key="start_test"):
+                    st.session_state.test_started = True
+                    st.session_state.show_syllabus = False
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Error displaying syllabus: {str(e)}")
+                st.write("Actual columns present:", list(data[0].keys()))
+
+# ================== Question Display ==================
+def display_question(q):
+    st.subheader(f"Question {st.session_state.current_question + 1}")
+    st.markdown(f"**Subject:** {q.get('Subject', 'N/A')} | **Topic:** {q.get('Topic', 'N/A')}")
+    st.markdown(f"**Difficulty:** {q.get('Difficulty Level', 'N/A')} | **Time Benchmark:** {q.get('Time to Solve (seconds)', 'N/A')}s")
+    
+    st.markdown(f"### {q.get('Question Text', 'Question text missing')}")
+    
+    options = [q.get('Option A', ''), q.get('Option B', ''), 
+               q.get('Option C', ''), q.get('Option D', '')]
+    answer = st.radio("Select your answer:", options, key=f"q{st.session_state.current_question}")
+    
+    time_spent = time.time() - st.session_state.question_start_time
+    st.caption(f"Time spent: {int(time_spent)}s (Benchmark: {q.get('Time to Solve (seconds)', 'N/A')}s)")
+    
+    if st.button("Next ➡️"):
+        process_answer(q, answer, time_spent)
+        st.session_state.current_question += 1
+        st.session_state.question_start_time = time.time()
         st.rerun()
 
-# Function to start the mock test
-def start_mock_test():
-    if "selected_test" not in st.session_state or "mock_data" not in st.session_state:
-        st.error("No mock test selected. Please go back and choose one.")
-        if st.button("Go Back"):
-            del st.session_state["selected_test"]
-            del st.session_state["mock_data"]
-            st.rerun()
-        return
-
-    st.title(f"{st.session_state['selected_test']} 📖")
-    st.subheader("Answer the questions below:")
-
-    mock_data = st.session_state["mock_data"]
+# ================== Answer Processing ==================
+def process_answer(q, answer, time_spent):
+    question_id = q.get('Question Number', st.session_state.current_question)
+    options = [q.get('Option A', ''), q.get('Option B', ''), 
+               q.get('Option C', ''), q.get('Option D', '')]
     
-    if mock_data is not None:
-        total_questions = len(mock_data)
-        user_answers = {}
+    try:
+        selected_option = chr(65 + options.index(answer))
+    except ValueError:
+        selected_option = 'X'
+        
+    st.session_state.user_answers[question_id] = {
+        'selected': selected_option,
+        'correct': q.get('Correct Answer', 'X'),
+        'time_taken': time_spent
+    }
 
-        for i in range(total_questions):
-            question = mock_data.iloc[i]
-            st.markdown(f"**Q{i+1}: {question['Question Text']}**")
+# ================== Enhanced Analysis ==================
+def analyze_performance(data):
+    st.title("📈 Advanced Performance Report")
+    
+    try:
+        total_time = sum(ans['time_taken'] for ans in st.session_state.user_answers.values())
+        benchmark_time = sum(int(q.get('Time to Solve (seconds)', 0)) for q in data)
+        correct = sum(1 for ans in st.session_state.user_answers.values() 
+                     if ans['selected'] == ans['correct'])
+        
+        # Difficulty Analysis
+        difficulty_stats = {}
+        for q in data:
+            level = q.get('Difficulty Level', 'Unknown')
+            ans = st.session_state.user_answers.get(q['Question Number'], {})
             
-            options = [question["Option A"], question["Option B"], question["Option C"], question["Option D"]]
-            user_answers[i] = st.radio(f"Select an answer for Q{i+1}:", options, key=f"q{i}")
-
-        if st.button("Submit Test"):
-            st.session_state["user_answers"] = user_answers
-            st.session_state["mock_data"] = mock_data
-            st.rerun()
-
-# Function to analyze the results
-def analyze_results():
-    if "user_answers" not in st.session_state or "mock_data" not in st.session_state:
-        st.error("No test data found. Please start a test first.")
-        if st.button("Go Back to Home"):
+            if level not in difficulty_stats:
+                difficulty_stats[level] = {'correct': 0, 'total': 0, 'time': 0}
+            
+            difficulty_stats[level]['total'] += 1
+            if ans.get('selected') == ans.get('correct'):
+                difficulty_stats[level]['correct'] += 1
+            difficulty_stats[level]['time'] += ans.get('time_taken', 0)
+        
+        # Display Analysis
+        with st.expander("📊 Overall Summary", expanded=True):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Score", f"{correct}/{len(data)}")
+            with col2:
+                st.metric("Accuracy", f"{(correct/len(data))*100:.1f}%")
+            with col3:
+                delta = total_time - benchmark_time
+                st.metric("Time Efficiency", f"{total_time:.0f}s",
+                         delta=f"{'Over' if delta >0 else 'Under'} by {abs(delta):.0f}s")
+        
+        if st.button("🔄 Take Another Test"):
             st.session_state.clear()
             st.rerun()
-        return
+            
+    except Exception as e:
+        st.error(f"Error generating report: {str(e)}")
 
-    st.title("Mock Test Analysis 📊")
-
-    mock_data = st.session_state["mock_data"]
-    user_answers = st.session_state["user_answers"]
-
-    correct_count = 0
-    total_questions = len(mock_data)
-    total_time = 0
-
-    st.subheader("Results Breakdown:")
-
-    for i in range(total_questions):
-        question = mock_data.iloc[i]
-        correct_answer = question["Correct Answer"]
-        user_answer = user_answers[i]
-        time_to_solve = question["Time to Solve (seconds)"]
-        total_time += time_to_solve
-
-        if user_answer == correct_answer:
-            correct_count += 1
-            st.success(f"✅ Q{i+1}: Correct! ({time_to_solve} sec)")
-        else:
-            st.error(f"❌ Q{i+1}: Incorrect. Correct Answer: {correct_answer} ({time_to_solve} sec)")
-
-    accuracy = (correct_count / total_questions) * 100
-    avg_time_per_question = total_time / total_questions if total_questions > 0 else 0
-
-    st.subheader("Final Score:")
-    st.write(f"**Total Questions:** {total_questions}")
-    st.write(f"**Correct Answers:** {correct_count}")
-    st.write(f"**Accuracy:** {accuracy:.2f}%")
-    st.write(f"**Average Time Per Question:** {avg_time_per_question:.2f} seconds")
-
-    if st.button("Retake Test"):
-        del st.session_state["user_answers"]
-        del st.session_state["mock_data"]
-        st.rerun()
-
-# Main function to control app flow
+# ================== Main Flow ==================
 def main():
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to:", ["Home", "Start Mock Test", "Results Analysis"])
-
-    if page == "Home":
-        mock_test_selection()
-    elif page == "Start Mock Test":
-        start_mock_test()
-    elif page == "Results Analysis":
-        analyze_results()
+    try:
+        if not st.session_state.test_selected:
+            show_welcome()
+        elif st.session_state.test_selected and not st.session_state.test_started:
+            show_syllabus()
+        elif st.session_state.test_started:
+            data = st.session_state.data_loaded
+            if not data:
+                st.error("No test data loaded!")
+                return
+                
+            if st.session_state.current_question < len(data):
+                q = data[st.session_state.current_question]
+                display_question(q)
+            else:
+                analyze_performance(data)
+                
+    except Exception as e:
+        st.error(f"Application error: {str(e)}")
+        st.write("Please refresh the page to restart")
 
 if __name__ == "__main__":
     main()
