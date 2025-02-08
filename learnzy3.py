@@ -95,7 +95,6 @@ def load_test_data(gid):
 # ---------------------------
 # PAGE FUNCTIONS
 # ---------------------------
-
 def welcome_page():
     st.title("Welcome to Smart Mock Test Platform")
     st.write("Get ready to hustle and ace your exams!")
@@ -167,7 +166,6 @@ def test_page():
 
     # Navigation Buttons
     col1, col2, col3 = st.columns(3)
-    # On navigation, record time spent on the current question.
     now = time.time()
     if col1.button("Previous") and current_index > 0:
         time_spent = now - st.session_state.current_question_start
@@ -369,7 +367,6 @@ def analysis_page():
     if st.button("Retake Test"):
         st.session_state.clear()
         st.rerun()
-
 
 # ---------------------------
 # MAIN APP FLOW
