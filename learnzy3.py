@@ -195,28 +195,41 @@ def analysis_page():
     user_answers = st.session_state.user_answers
     question_times = st.session_state.question_times
     total_questions = len(questions)
-    
-    # Overall Metrics
+
+    # ---------------------------
+    # Overall Metrics & Per Question Analysis
+    # ---------------------------
     correct = 0
     total_user_time = 0
     total_ideal_time = 0
+    per_question_data = []  # Will hold data for each question for further time analysis
+
     for i, q in enumerate(questions):
         user_ans = user_answers.get(i, None)
-        if user_ans is None:
-            continue
-        # Determine answer letter based on options ordering.
         opts = [q["Option A"], q["Option B"], q["Option C"], q["Option D"]]
-        try:
-            letter = chr(65 + opts.index(user_ans))
-        except ValueError:
-            letter = ""
+        letter = ""
+        if user_ans in opts:
+            try:
+                letter = chr(65 + opts.index(user_ans))
+            except Exception:
+                letter = ""
         if letter == q["Correct Answer"]:
             correct += 1
-        total_user_time += question_times.get(i, 0)
+        user_time = question_times.get(i, 0)
+        total_user_time += user_time
         try:
-            total_ideal_time += float(q["Time to Solve (seconds)"])
+            ideal_time = float(q["Time to Solve (seconds)"])
         except:
-            pass
+            ideal_time = 0
+        total_ideal_time += ideal_time
+        ratio = user_time / ideal_time if ideal_time > 0 else 0
+        per_question_data.append({
+            "Question": i + 1,
+            "User Time": user_time,
+            "Ideal Time": ideal_time,
+            "Time Ratio": ratio
+        })
+
     accuracy = (correct / total_questions) * 100 if total_questions > 0 else 0
 
     st.subheader("Overall Metrics")
@@ -224,45 +237,82 @@ def analysis_page():
     col1.metric("Total Questions", total_questions)
     col2.metric("Correct Answers", correct)
     col3.metric("Accuracy", f"{accuracy:.1f}%")
-    
-    st.subheader("Time Analysis")
+
+    # ---------------------------
+    # Time Management Analysis
+    # ---------------------------
+    st.subheader("Time Management Analysis")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Your Total Time", f"{total_user_time:.1f} sec")
-    col2.metric("Ideal Total Time", f"{total_ideal_time:.1f} sec")
+    col1.metric("Test Duration Allowed", f"{TEST_DURATION} sec")
+    col2.metric("Your Total Time", f"{total_user_time:.1f} sec")
+    col3.metric("Ideal Total Time", f"{total_ideal_time:.1f} sec")
     time_diff = total_user_time - total_ideal_time
-    col3.metric("Time Difference", f"{abs(time_diff):.1f} sec", delta=f"{'Over' if time_diff > 0 else 'Under'} Ideal")
+    st.write(f"**Time Difference:** {'Over' if time_diff > 0 else 'Under'} Ideal by {abs(time_diff):.1f} sec")
+
+    # Display per-question data
+    per_question_df = pd.DataFrame(per_question_data)
+    st.write("**Per Question Time Analysis:**")
+    st.dataframe(per_question_df)
+
+    # Bar chart comparing User Time vs Ideal Time
+    st.write("**Time Comparison Chart:**")
+    chart_data = per_question_df[["User Time", "Ideal Time"]]
+    st.bar_chart(chart_data)
+
+    # Identify questions with significant time deviations
+    over_time_questions = per_question_df[per_question_df["Time Ratio"] > 1.5]
+    quick_questions = per_question_df[(per_question_df["Time Ratio"] > 0) & (per_question_df["Time Ratio"] < 0.75)]
     
-    # Topic-wise Analysis
-    st.subheader("Topic-wise Breakdown")
-    topic_stats = {}
+    st.write("**Questions Taking More Than 150% of Ideal Time:**")
+    if not over_time_questions.empty:
+        st.dataframe(over_time_questions)
+    else:
+        st.write("None")
+
+    st.write("**Questions Solved Significantly Faster (Less than 75% of Ideal Time):**")
+    if not quick_questions.empty:
+        st.dataframe(quick_questions)
+    else:
+        st.write("None")
+
+    # ---------------------------
+    # Subject, Topic & Subtopic Breakdown
+    # ---------------------------
+    st.subheader("Subject, Topic & Subtopic Breakdown")
+    # Group by 'Subject' (if available); otherwise fall back to 'Topic'
+    subject_stats = {}
     for i, q in enumerate(questions):
-        topic = q["Topic"]
-        if topic not in topic_stats:
-            topic_stats[topic] = {"total": 0, "correct": 0, "user_time": 0, "ideal_time": 0}
-        topic_stats[topic]["total"] += 1
+        subject = q.get("Subject", q.get("Topic", "Unknown"))
+        if subject not in subject_stats:
+            subject_stats[subject] = {"total": 0, "correct": 0, "user_time": 0, "ideal_time": 0}
+        subject_stats[subject]["total"] += 1
         opts = [q["Option A"], q["Option B"], q["Option C"], q["Option D"]]
         user_ans = user_answers.get(i, None)
-        try:
-            letter = chr(65 + opts.index(user_ans)) if user_ans in opts else ""
-        except:
-            letter = ""
+        letter = ""
+        if user_ans in opts:
+            try:
+                letter = chr(65 + opts.index(user_ans))
+            except Exception:
+                letter = ""
         if letter == q["Correct Answer"]:
-            topic_stats[topic]["correct"] += 1
-        topic_stats[topic]["user_time"] += question_times.get(i, 0)
+            subject_stats[subject]["correct"] += 1
+        subject_stats[subject]["user_time"] += question_times.get(i, 0)
         try:
-            topic_stats[topic]["ideal_time"] += float(q["Time to Solve (seconds)"])
+            subject_stats[subject]["ideal_time"] += float(q["Time to Solve (seconds)"])
         except:
             pass
 
-    topic_df = pd.DataFrame(topic_stats).T
-    topic_df["accuracy"] = (topic_df["correct"] / topic_df["total"]) * 100
-    topic_df["avg_user_time"] = topic_df["user_time"] / topic_df["total"]
-    topic_df["avg_ideal_time"] = topic_df["ideal_time"] / topic_df["total"]
-    topic_df["time_diff"] = topic_df["avg_user_time"] - topic_df["avg_ideal_time"]
-    st.dataframe(topic_df)
-    
-    # Additional Insights based on other tags:
-    st.subheader("Additional Insights")
+    subject_df = pd.DataFrame(subject_stats).T
+    subject_df["accuracy"] = (subject_df["correct"] / subject_df["total"]) * 100
+    subject_df["avg_user_time"] = subject_df["user_time"] / subject_df["total"]
+    subject_df["avg_ideal_time"] = subject_df["ideal_time"] / subject_df["total"]
+    subject_df["Time Ratio"] = subject_df["avg_user_time"] / subject_df["avg_ideal_time"]
+    st.dataframe(subject_df)
+
+    # ---------------------------
+    # Deep Insights Based on Other Tags
+    # ---------------------------
+    st.subheader("Deep Insights")
     difficulty_counts = {}
     bloom_counts = {}
     priority_counts = {}
@@ -276,10 +326,50 @@ def analysis_page():
     st.write("**Difficulty Level Distribution:**", difficulty_counts)
     st.write("**Bloom’s Taxonomy Distribution:**", bloom_counts)
     st.write("**Priority Level Distribution:**", priority_counts)
-    
+
+    # ---------------------------
+    # Improvement Plan & Actionable Recommendations
+    # ---------------------------
+    st.subheader("Improvement Plan & Actionable Insights")
+    st.write("Based on the analysis above, here are some recommendations to help improve your performance:")
+
+    # General time management suggestions
+    if total_user_time > total_ideal_time:
+        st.write("- **Time Management:** You took longer than the ideal time by "
+                 f"{abs(time_diff):.1f} sec. Consider practicing with timed drills to boost your speed.")
+    else:
+        st.write("- **Time Management:** Great job on keeping within the ideal time frame!")
+
+    # Recommendations from per-question time deviations
+    if not over_time_questions.empty:
+        st.write("- **Focus on Speed:** The following questions took significantly longer than expected:")
+        for _, row in over_time_questions.iterrows():
+            st.write(f"  - **Question {int(row['Question'])}**: Your time was {row['User Time']:.1f} sec vs Ideal {row['Ideal Time']:.1f} sec.")
+    else:
+        st.write("- **Time Efficiency:** No individual questions took excessively long.")
+
+    if not quick_questions.empty:
+        st.write("- **Review for Accuracy:** The following questions were answered very quickly. Make sure speed isn’t affecting your accuracy:")
+        for _, row in quick_questions.iterrows():
+            st.write(f"  - **Question {int(row['Question'])}**: Your time was {row['User Time']:.1f} sec vs Ideal {row['Ideal Time']:.1f} sec.")
+    else:
+        st.write("- **Balanced Pace:** You maintained a good pace on all questions.")
+
+    # Recommendations based on subject/topic breakdown
+    weak_subjects = subject_df[subject_df["accuracy"] < 70]
+    if not weak_subjects.empty:
+        st.write("- **Subject-Level Improvement:** Focus on these areas where your accuracy is below 70%:")
+        for subject, row in weak_subjects.iterrows():
+            st.write(f"  - **{subject}**: Accuracy {row['accuracy']:.1f}% with an average time of {row['avg_user_time']:.1f} sec (Ideal: {row['avg_ideal_time']:.1f} sec).")
+    else:
+        st.write("- **Subject Mastery:** Your performance across subjects is strong.")
+
+    st.write("- **Content-Specific Focus:** Additionally, review questions flagged with higher difficulty or common pitfalls (as seen in the deep insights) for further improvement.")
+
     if st.button("Retake Test"):
         st.session_state.clear()
         st.rerun()
+
 
 # ---------------------------
 # MAIN APP FLOW
