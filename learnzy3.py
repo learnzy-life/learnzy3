@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import time
-import altair as alt  # For creating a comprehensive chart
 
 # ---------------------------
 # CONFIGURATION & CONSTANTS
@@ -238,7 +237,7 @@ def analysis_page():
     col3.metric("Accuracy", f"{accuracy:.1f}%")
 
     # ---------------------------
-    # Time Management Analysis (Chart Only)
+    # Time Management Analysis
     # ---------------------------
     st.subheader("Time Management Analysis")
     col1, col2, col3 = st.columns(3)
@@ -248,35 +247,24 @@ def analysis_page():
     time_diff = total_user_time - total_ideal_time
     st.write(f"**Time Difference:** {'Over' if time_diff > 0 else 'Under'} Ideal by {abs(time_diff):.1f} sec")
 
-    # Create a comprehensive Altair chart for per-question time comparison
     per_question_df = pd.DataFrame(per_question_data)
-    chart = alt.Chart(per_question_df).transform_fold(
-        ['User Time', 'Ideal Time'],
-        as_=['Time Type', 'Time']
-    ).mark_bar().encode(
-        x=alt.X('Question:O', title="Question Number"),
-        y=alt.Y('Time:Q', title="Time (sec)"),
-        color='Time Type:N',
-        tooltip=['Question', 'Time Type', 'Time']
-    ).properties(
-        width=700,
-        height=400,
-        title="Per-Question Time Comparison: Your Time vs. Ideal Time"
-    )
-    st.altair_chart(chart, use_container_width=True)
+    st.write("**Per Question Time Analysis:**")
+    st.dataframe(per_question_df)
+    st.write("**Time Comparison Chart:**")
+    st.bar_chart(per_question_df[["User Time", "Ideal Time"]])
 
     over_time_questions = per_question_df[per_question_df["Time Ratio"] > 1.5]
     quick_questions = per_question_df[(per_question_df["Time Ratio"] > 0) & (per_question_df["Time Ratio"] < 0.75)]
     
     st.write("**Questions Taking More Than 150% of Ideal Time:**")
     if not over_time_questions.empty:
-        st.write(over_time_questions[['Question', 'User Time', 'Ideal Time', 'Time Ratio']])
+        st.dataframe(over_time_questions)
     else:
         st.write("None")
 
     st.write("**Questions Solved Significantly Faster (Less than 75% of Ideal Time):**")
     if not quick_questions.empty:
-        st.write(quick_questions[['Question', 'User Time', 'Ideal Time', 'Time Ratio']])
+        st.dataframe(quick_questions)
     else:
         st.write("None")
 
@@ -440,3 +428,4 @@ def main():
         
 if __name__ == "__main__":
     main()
+
