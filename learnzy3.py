@@ -304,45 +304,76 @@ def analysis_page():
     # Present plain language insights for each subject/topic
     for subject, row in subject_df.iterrows():
         st.write(f"**{subject}**:")
-        st.write(f"- You answered **{row['correct']} out of {row['total']}** questions correctly ({row['accuracy']:.1f}%).")
-        st.write(f"- Your average time per question: **{row['avg_user_time']:.1f} sec** (Ideal: **{row['avg_ideal_time']:.1f} sec**).")
+        st.write(f"- Correct Answers: **{row['correct']}** out of **{row['total']}** ({row['accuracy']:.1f}%).")
+        st.write(f"- Average Time per Question: **{row['avg_user_time']:.1f} sec** (Ideal: **{row['avg_ideal_time']:.1f} sec**).")
         if row['accuracy'] < 70:
-            st.write(f"  - *Action:* Review key concepts in {subject} to improve your accuracy.")
+            st.info(f"Action: Review key concepts in {subject} to boost accuracy.")
         if row['Time Ratio'] > 1.2:
-            st.write(f"  - *Action:* Practice timed drills in {subject} to reduce your response time.")
+            st.warning(f"Action: Practice timed drills in {subject} to reduce response time.")
         if row['accuracy'] >= 70 and row['Time Ratio'] <= 1.2:
-            st.write(f"  - *Well done!* Your performance in {subject} is on track.")
-        st.write("---")
+            st.success(f"Great job in {subject}! Keep it up!")
+        st.markdown("---")
     
     # ---------------------------
-    # Deep Insights (Plain Language)
+    # Deep Insights (Enhanced with Context)
     # ---------------------------
     st.subheader("Deep Insights")
-    difficulty_counts = {}
-    bloom_counts = {}
-    priority_counts = {}
-    for q in questions:
-        diff = q.get("Difficulty Level", "Unknown")
-        bloom = q.get("Bloom’s Taxonomy", "Unknown")
-        priority = q.get("Priority Level", "Unknown")
-        difficulty_counts[diff] = difficulty_counts.get(diff, 0) + 1
-        bloom_counts[bloom] = bloom_counts.get(bloom, 0) + 1
-        priority_counts[priority] = priority_counts.get(priority, 0) + 1
+    st.markdown(
+        """
+        In this section, we provide detailed feedback based on various tags assigned to each question.
+        For each tag category, you'll see:
+        
+        - **Total Questions:** The number of questions in that category.
+        - **Correct Answers:** How many you answered correctly.
+        - **Accuracy:** Your performance percentage in that category.
+        
+        Use these insights to identify which types of questions or cognitive skills require more focus.
+        """
+    )
     
-    st.write("**Difficulty Level Summary:**")
-    for level, count in difficulty_counts.items():
-        st.write(f"- {level}: {count} question(s)")
-    st.write("If you struggled with 'Hard' questions, consider revisiting those topics for a stronger foundation.")
+    # Prepare statistics for each tag type:
+    def compute_tag_stats(tag_key):
+        stats = {}
+        for i, q in enumerate(questions):
+            tag_val = q.get(tag_key, "Unknown")
+            if tag_val not in stats:
+                stats[tag_val] = {"total": 0, "correct": 0}
+            stats[tag_val]["total"] += 1
+            opts = [q["Option A"], q["Option B"], q["Option C"], q["Option D"]]
+            user_ans = user_answers.get(i, None)
+            letter = ""
+            if user_ans in opts:
+                try:
+                    letter = chr(65 + opts.index(user_ans))
+                except Exception:
+                    letter = ""
+            if letter == q["Correct Answer"]:
+                stats[tag_val]["correct"] += 1
+        return stats
 
-    st.write("**Cognitive Level (Bloom's Taxonomy) Summary:**")
-    for level, count in bloom_counts.items():
-        st.write(f"- {level}: {count} question(s)")
-    st.write("If questions that require higher-order thinking (such as Analysis or Synthesis) were challenging, try practicing those skills further.")
+    # Difficulty Level Stats
+    diff_stats = compute_tag_stats("Difficulty Level")
+    st.markdown("### Difficulty Level")
+    for level, data in diff_stats.items():
+        acc = (data["correct"] / data["total"]) * 100 if data["total"] > 0 else 0
+        st.write(f"- **{level}**: {data['correct']} out of {data['total']} correct ({acc:.1f}%).")
+    st.info("If you find that you're struggling with 'Hard' questions, it may help to revisit those topics.")
 
-    st.write("**Priority Level Summary:**")
-    for level, count in priority_counts.items():
-        st.write(f"- {level}: {count} question(s)")
-    st.write("Focus on high-priority topics to ensure a solid overall understanding.")
+    # Bloom's Taxonomy Stats
+    bloom_stats = compute_tag_stats("Bloom’s Taxonomy")
+    st.markdown("### Bloom's Taxonomy")
+    for level, data in bloom_stats.items():
+        acc = (data["correct"] / data["total"]) * 100 if data["total"] > 0 else 0
+        st.write(f"- **{level}**: {data['correct']} out of {data['total']} correct ({acc:.1f}%).")
+    st.info("Focus on building higher-order thinking skills if analysis or synthesis questions are challenging.")
+
+    # Priority Level Stats
+    priority_stats = compute_tag_stats("Priority Level")
+    st.markdown("### Priority Level")
+    for level, data in priority_stats.items():
+        acc = (data["correct"] / data["total"]) * 100 if data["total"] > 0 else 0
+        st.write(f"- **{level}**: {data['correct']} out of {data['total']} correct ({acc:.1f}%).")
+    st.info("Pay extra attention to high-priority topics to ensure a comprehensive understanding.")
 
     # ---------------------------
     # Improvement Plan (Max 5 Items)
@@ -362,12 +393,12 @@ def analysis_page():
             improvement_items.append(f"Practice timed exercises in {subject} (Time Ratio: {row['Time Ratio']:.2f}).")
     
     # Recommendations from deep insights
-    if difficulty_counts.get("Hard", 0) > 0:
+    if diff_stats.get("Hard", {"total": 0})["total"] > 0:
         improvement_items.append("Focus on challenging 'Hard' questions to boost your conceptual understanding.")
-    if bloom_counts.get("Analysis", 0) > 0 or bloom_counts.get("Synthesis", 0) > 0:
+    if bloom_stats.get("Analysis", {"total": 0})["total"] > 0 or bloom_stats.get("Synthesis", {"total": 0})["total"] > 0:
         improvement_items.append("Enhance your higher-order thinking skills through targeted practice on analysis and synthesis questions.")
     
-    # Remove duplicate recommendations and select only the first 5
+    # Remove duplicates and limit to 5 items
     unique_improvements = list(dict.fromkeys(improvement_items))
     top_improvements = unique_improvements[:5]
     
