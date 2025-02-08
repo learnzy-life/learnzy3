@@ -200,7 +200,7 @@ def analysis_page():
     correct = 0
     total_user_time = 0
     total_ideal_time = 0
-    per_question_data = []  # Will hold data for each question for further time analysis
+    per_question_data = []  # Holds data for each question for further time analysis
 
     for i, q in enumerate(questions):
         user_ans = user_answers.get(i, None)
@@ -247,17 +247,12 @@ def analysis_page():
     time_diff = total_user_time - total_ideal_time
     st.write(f"**Time Difference:** {'Over' if time_diff > 0 else 'Under'} Ideal by {abs(time_diff):.1f} sec")
 
-    # Display per-question data
     per_question_df = pd.DataFrame(per_question_data)
     st.write("**Per Question Time Analysis:**")
     st.dataframe(per_question_df)
-
-    # Bar chart comparing User Time vs Ideal Time
     st.write("**Time Comparison Chart:**")
-    chart_data = per_question_df[["User Time", "Ideal Time"]]
-    st.bar_chart(chart_data)
+    st.bar_chart(per_question_df[["User Time", "Ideal Time"]])
 
-    # Identify questions with significant time deviations
     over_time_questions = per_question_df[per_question_df["Time Ratio"] > 1.5]
     quick_questions = per_question_df[(per_question_df["Time Ratio"] > 0) & (per_question_df["Time Ratio"] < 0.75)]
     
@@ -274,13 +269,13 @@ def analysis_page():
         st.write("None")
 
     # ---------------------------
-    # Subject, Topic & Subtopic Breakdown
+    # Performance Breakdown by Subject/Topic
     # ---------------------------
-    st.subheader("Subject, Topic & Subtopic Breakdown")
-    # Group by 'Subject' (if available); otherwise fall back to 'Topic'
+    st.subheader("Performance Breakdown by Subject/Topic")
     subject_stats = {}
     for i, q in enumerate(questions):
-        subject = q.get("Subject", q.get("Topic", "Unknown"))
+        # Use 'Subject' if available, otherwise 'Topic', else default to "General"
+        subject = q.get("Subject", q.get("Topic", "General"))
         if subject not in subject_stats:
             subject_stats[subject] = {"total": 0, "correct": 0, "user_time": 0, "ideal_time": 0}
         subject_stats[subject]["total"] += 1
@@ -305,10 +300,22 @@ def analysis_page():
     subject_df["avg_user_time"] = subject_df["user_time"] / subject_df["total"]
     subject_df["avg_ideal_time"] = subject_df["ideal_time"] / subject_df["total"]
     subject_df["Time Ratio"] = subject_df["avg_user_time"] / subject_df["avg_ideal_time"]
-    st.dataframe(subject_df)
-
+    
+    # Present plain language insights for each subject/topic
+    for subject, row in subject_df.iterrows():
+        st.write(f"**{subject}**:")
+        st.write(f"- You answered **{row['correct']} out of {row['total']}** questions correctly ({row['accuracy']:.1f}%).")
+        st.write(f"- Your average time per question: **{row['avg_user_time']:.1f} sec** (Ideal: **{row['avg_ideal_time']:.1f} sec**).")
+        if row['accuracy'] < 70:
+            st.write(f"  - *Action:* Review key concepts in {subject} to improve your accuracy.")
+        if row['Time Ratio'] > 1.2:
+            st.write(f"  - *Action:* Practice timed drills in {subject} to reduce your response time.")
+        if row['accuracy'] >= 70 and row['Time Ratio'] <= 1.2:
+            st.write(f"  - *Well done!* Your performance in {subject} is on track.")
+        st.write("---")
+    
     # ---------------------------
-    # Deep Insights Based on Other Tags
+    # Deep Insights (Plain Language)
     # ---------------------------
     st.subheader("Deep Insights")
     difficulty_counts = {}
@@ -321,48 +328,52 @@ def analysis_page():
         difficulty_counts[diff] = difficulty_counts.get(diff, 0) + 1
         bloom_counts[bloom] = bloom_counts.get(bloom, 0) + 1
         priority_counts[priority] = priority_counts.get(priority, 0) + 1
-    st.write("**Difficulty Level Distribution:**", difficulty_counts)
-    st.write("**Bloom’s Taxonomy Distribution:**", bloom_counts)
-    st.write("**Priority Level Distribution:**", priority_counts)
+    
+    st.write("**Difficulty Level Summary:**")
+    for level, count in difficulty_counts.items():
+        st.write(f"- {level}: {count} question(s)")
+    st.write("If you struggled with 'Hard' questions, consider revisiting those topics for a stronger foundation.")
+
+    st.write("**Cognitive Level (Bloom's Taxonomy) Summary:**")
+    for level, count in bloom_counts.items():
+        st.write(f"- {level}: {count} question(s)")
+    st.write("If questions that require higher-order thinking (such as Analysis or Synthesis) were challenging, try practicing those skills further.")
+
+    st.write("**Priority Level Summary:**")
+    for level, count in priority_counts.items():
+        st.write(f"- {level}: {count} question(s)")
+    st.write("Focus on high-priority topics to ensure a solid overall understanding.")
 
     # ---------------------------
-    # Improvement Plan & Actionable Recommendations
+    # Improvement Plan (Max 5 Items)
     # ---------------------------
-    st.subheader("Improvement Plan & Actionable Insights")
-    st.write("Based on the analysis above, here are some recommendations to help improve your performance:")
-
-    # General time management suggestions
+    st.subheader("Improvement Plan")
+    improvement_items = []
+    
+    # Recommendation from time management analysis
     if total_user_time > total_ideal_time:
-        st.write("- **Time Management:** You took longer than the ideal time by "
-                 f"{abs(time_diff):.1f} sec. Consider practicing with timed drills to boost your speed.")
-    else:
-        st.write("- **Time Management:** Great job on keeping within the ideal time frame!")
-
-    # Recommendations from per-question time deviations
-    if not over_time_questions.empty:
-        st.write("- **Focus on Speed:** The following questions took significantly longer than expected:")
-        for _, row in over_time_questions.iterrows():
-            st.write(f"  - **Question {int(row['Question'])}**: Your time was {row['User Time']:.1f} sec vs Ideal {row['Ideal Time']:.1f} sec.")
-    else:
-        st.write("- **Time Efficiency:** No individual questions took excessively long.")
-
-    if not quick_questions.empty:
-        st.write("- **Review for Accuracy:** The following questions were answered very quickly. Make sure speed isn’t affecting your accuracy:")
-        for _, row in quick_questions.iterrows():
-            st.write(f"  - **Question {int(row['Question'])}**: Your time was {row['User Time']:.1f} sec vs Ideal {row['Ideal Time']:.1f} sec.")
-    else:
-        st.write("- **Balanced Pace:** You maintained a good pace on all questions.")
-
-    # Recommendations based on subject/topic breakdown
-    weak_subjects = subject_df[subject_df["accuracy"] < 70]
-    if not weak_subjects.empty:
-        st.write("- **Subject-Level Improvement:** Focus on these areas where your accuracy is below 70%:")
-        for subject, row in weak_subjects.iterrows():
-            st.write(f"  - **{subject}**: Accuracy {row['accuracy']:.1f}% with an average time of {row['avg_user_time']:.1f} sec (Ideal: {row['avg_ideal_time']:.1f} sec).")
-    else:
-        st.write("- **Subject Mastery:** Your performance across subjects is strong.")
-
-    st.write("- **Content-Specific Focus:** Additionally, review questions flagged with higher difficulty or common pitfalls (as seen in the deep insights) for further improvement.")
+        improvement_items.append(f"Improve time management by practicing timed drills (Over by {abs(time_diff):.1f} sec).")
+    
+    # Recommendations from subject/topic breakdown
+    for subject, row in subject_df.iterrows():
+        if row["accuracy"] < 70:
+            improvement_items.append(f"Review key concepts in {subject} (Accuracy: {row['accuracy']:.1f}%).")
+        if row["Time Ratio"] > 1.2:
+            improvement_items.append(f"Practice timed exercises in {subject} (Time Ratio: {row['Time Ratio']:.2f}).")
+    
+    # Recommendations from deep insights
+    if difficulty_counts.get("Hard", 0) > 0:
+        improvement_items.append("Focus on challenging 'Hard' questions to boost your conceptual understanding.")
+    if bloom_counts.get("Analysis", 0) > 0 or bloom_counts.get("Synthesis", 0) > 0:
+        improvement_items.append("Enhance your higher-order thinking skills through targeted practice on analysis and synthesis questions.")
+    
+    # Remove duplicate recommendations and select only the first 5
+    unique_improvements = list(dict.fromkeys(improvement_items))
+    top_improvements = unique_improvements[:5]
+    
+    st.write("Based on your performance, here are the top areas to work on:")
+    for idx, item in enumerate(top_improvements, 1):
+        st.write(f"{idx}. {item}")
 
     if st.button("Retake Test"):
         st.session_state.clear()
